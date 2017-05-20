@@ -1,5 +1,6 @@
 """ DEEP LEARNING: ASSIGNMENT 3 PART 2 """
 """ Kirk Swanson """
+""" Kyle was here """
 
 """ Import the numpy package """
 import numpy as np
