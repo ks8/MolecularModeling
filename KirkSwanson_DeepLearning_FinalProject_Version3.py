@@ -3,6 +3,7 @@
 
 """ Import the numpy package """
 import numpy as np
+np.random.seed(0)
 
 """ Import the math package """
 import math
@@ -25,46 +26,24 @@ import matplotlib.pyplot as plt
 import scipy 
 from scipy.misc import imread
 
+""" Import json """
+import json
+
 """ Load the images and labels as numpy arrays """
-images = []
-labels = []
+data = json.load(open('metadata/metadata.json', 'r'))
+np.random.shuffle(data)
 
-for root, subfolders, files in os.walk('.'):
-	for f in files:
-		if 'full' in f or '.py' in f:
-			continue
-		images.append(imread(os.path.join(root, f)))
-		labels.append(os.path.split(root)[1])
-
-""" Convert images list to a numpy array """
-images = np.asarray(images)
-
-""" Extract the labels """
-for i in range(len(labels)):
-	one_hot = np.zeros(2)
-	if float(labels[i][8:]) == 0.05:
-		one_hot[0] = 1
-		one_hot[1] = 0
-	else: 
-		one_hot[0] = 0
-		one_hot[1] = 1
-	labels[i] = one_hot
-
-""" Convert the labels list to a numpy array """
+#images = [imread(row['path']) for row in data]
+labels = [[1,0] if row['label'] == 0.05 else [0,1] for row in data]
 labels = np.asarray(labels)
 
-""" Randomize the data """
-permutation = np.random.permutation(20000)
-images = images[permutation]
-labels = labels[permutation]
-
 """ Reformulate the data into train, validation, and test sets """
-test_X = images[0:4000, :, :]
-test_Y = labels[0:4000, :]
-validation_X = images[4000:7200, :, :]
-validation_Y = labels[4000:7200, :]
-train_X = images[7200:, :, :]
-train_Y = labels[7200:, :]
+#test_X = images[:int(0.1*len(data))]
+test_Y = labels[:int(0.1*len(data))]
+#validation_X = images[int(0.1*len(data)):int(0.2*len(data))]
+validation_Y = labels[int(0.1*len(data)):int(0.2*len(data))]
+#train_X = images[int(0.2*len(data)):]
+train_Y = labels[int(0.2*len(data)):]
 
 """ We will use the InteractiveSession class, which interleaves operations that build and run a computation graph """
 import tensorflow as tf 
