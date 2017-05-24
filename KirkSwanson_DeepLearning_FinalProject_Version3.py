@@ -29,21 +29,32 @@ from scipy.misc import imread
 """ Import json """
 import json
 
-""" Load the images and labels as numpy arrays """
+""" Import batch class """
+from batch import Batch
+
+im_size = 250
+label_size = 2
+
+# Load the data
 data = json.load(open('metadata/metadata.json', 'r'))
 np.random.shuffle(data)
 
-#images = [imread(row['path']) for row in data]
-labels = [[1,0] if row['label'] == 0.05 else [0,1] for row in data]
-labels = np.asarray(labels)
+# For now get only images with t=0.5 and rho=0.05 or rho=0.75 so binary classification problem
+data = list(filter(lambda x: x['label']['t'] == 0.5 and x['label']['rho'] in [0.05, 0.75], data)) # TEMPORARY
 
-""" Reformulate the data into train, validation, and test sets """
-#test_X = images[:int(0.1*len(data))]
-test_Y = labels[:int(0.1*len(data))]
-#validation_X = images[int(0.1*len(data)):int(0.2*len(data))]
-validation_Y = labels[int(0.1*len(data)):int(0.2*len(data))]
-#train_X = images[int(0.2*len(data)):]
-train_Y = labels[int(0.2*len(data)):]
+# TEMPORARY
+def one_hot(labels):
+	return [[1,0] if row[1] == 0.05 else [0,1] for row in labels]
+
+# Divide data into train, validation, and test
+train_data = data[:int(0.8*len(data))]
+validation_data = data[int(0.8*len(data)):int(0.9*len(data))]
+test_data = data[int(0.9*len(data)):]
+
+# Create batch generators for train, validation, and test
+train = Batch(train_data, im_size, label_size)
+validation = Batch(validation_data, im_size, label_size)
+test = Batch(test_data, im_size, label_size)
 
 """ We will use the InteractiveSession class, which interleaves operations that build and run a computation graph """
 import tensorflow as tf 
@@ -52,9 +63,10 @@ sess = tf.InteractiveSession()
 """ Set the learning rate """
 eta = 1e-3
 batch_size = 50
+validation_size = 50
 
 """ Set the number of iterations """
-iterations = 30
+iterations = 500
 
 """ Define list to hold the cross-entropy loss """
 errors = []
@@ -120,26 +132,23 @@ correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(y_, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 sess.run(tf.global_variables_initializer())
 
-""" Reshape validation_X and test_X arrays """
-validation_X = validation_X.reshape(len(validation_X), -1)
-test_X = test_X.reshape(len(test_X), -1)
-
 for i in range(iterations):
-	batch_index = i*batch_size
-	batch_X = train_X[batch_index:(batch_index + batch_size), :, :]
-	batch_X = batch_X.reshape(len(batch_X), -1)
-	batch_Y = train_Y[batch_index:(batch_index + batch_size), :]
-	train_accuracy = accuracy.eval(feed_dict={x: batch_X, y_: batch_Y})
-	validation_accuracy = accuracy.eval(feed_dict={x: validation_X, y_: validation_Y})
-	validation_loss = cross_entropy.eval(feed_dict={x: validation_X, y_: validation_Y})
-	#test = y_conv.eval(feed_dict={x: validation_X, y_: validation_Y})
-	#print(test)
-	#print(y_conv)
-	#errors.append(validation_loss)
-	print("step %d, training accuracy %g, validation accuracy %g, validation loss %g"%(i, train_accuracy, validation_accuracy, validation_loss))
-	train_step.run(feed_dict={x: batch_X, y_: batch_Y})
+	train_X, train_Y = train.next(batch_size)
+	train_Y = one_hot(train_Y) # TEMPORARY
+	train_accuracy = accuracy.eval(feed_dict={x: train_X, y_: train_Y})
+	train_loss = cross_entropy.eval(feed_dict={x: train_X, y_: train_Y})
 
-#errors = np.asarray(errors)
+	if i % 10 == 0:
+		validation_X, validation_Y = validation.next(validation_size)
+		validation_Y = one_hot(validation_Y) # TEMPORARY
+		validation_accuracy = accuracy.eval(feed_dict={x: validation_X, y_: validation_Y})
+		validation_loss = cross_entropy.eval(feed_dict={x: validation_X, y_: validation_Y})
+		print("step %d, training accuracy %g, validation accuracy %g, validation loss %g"%(i, train_accuracy, validation_accuracy, validation_loss))
+	else:
+		print("step %d, training accuracy %g"%(i, train_accuracy))
+
+	train_step.run(feed_dict={x: train_X, y_: train_Y})
+
 print("test accuracy %g"%accuracy.eval(feed_dict={x: test_X, y_: test_Y}))
 print("test loss %g"%cross_entropy.eval(feed_dict={x: test_X, y_: test_Y}))
 
