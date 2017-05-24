@@ -34,17 +34,11 @@ from batch import Batch
 
 im_size = 250
 label_size = 2
+one_hot = True
 
 # Load the data
 data = json.load(open('metadata/metadata.json', 'r'))
 np.random.shuffle(data)
-
-# For now get only images with t=0.5 and rho=0.05 or rho=0.75 so binary classification problem
-data = list(filter(lambda x: x['label']['t'] == 0.5 and x['label']['rho'] in [0.05, 0.75], data)) # TEMPORARY
-
-# TEMPORARY
-def one_hot(labels):
-	return [[1,0] if row[1] == 0.05 else [0,1] for row in labels]
 
 # Divide data into train, validation, and test
 train_data = data[:int(0.8*len(data))]
@@ -52,9 +46,11 @@ validation_data = data[int(0.8*len(data)):int(0.9*len(data))]
 test_data = data[int(0.9*len(data)):]
 
 # Create batch generators for train, validation, and test
-train = Batch(train_data, im_size, label_size)
-validation = Batch(validation_data, im_size, label_size)
-test = Batch(test_data, im_size, label_size)
+train = Batch(train_data, one_hot=one_hot)
+validation = Batch(validation_data, one_hot=one_hot)
+test = Batch(test_data, one_hot=one_hot)
+
+n_outputs = train.label_size
 
 """ We will use the InteractiveSession class, which interleaves operations that build and run a computation graph """
 import tensorflow as tf 
@@ -73,7 +69,7 @@ errors = []
 
 """ Input nodes """
 x = tf.placeholder(tf.float32, shape=[None, 62500])
-y_ = tf.placeholder(tf.float32, shape=[None, 2])
+y_ = tf.placeholder(tf.float32, shape=[None, n_outputs])
 
 """ Function to initialize the weights with small noise """
 def weight_variable(shape):
@@ -117,14 +113,15 @@ b_fc2 = bias_variable([300])
 h_fc2 = tf.nn.relu(tf.matmul(h_fc1, W_fc2) + b_fc2)
 
 """ Output layer """
-W_fc3 = weight_variable([300, 2])
-b_fc3 = bias_variable([2])
+W_fc3 = weight_variable([300, n_outputs])
+b_fc3 = bias_variable([n_outputs])
 
 y_conv = tf.matmul(h_fc2, W_fc3) + b_fc3
 
 """ Training """
 """ Define the average cross-entropy over all examples in a given batch """
 cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=y_conv))
+#mean_square_error = tf.reduce_mean(tf.square(y_ - y_conv))
 
 """ Define training using the ADAM optimizer and cross-entropy loss """
 train_step = tf.train.AdamOptimizer(eta).minimize(cross_entropy)
@@ -134,18 +131,16 @@ sess.run(tf.global_variables_initializer())
 
 for i in range(iterations):
 	train_X, train_Y = train.next(batch_size)
-	train_Y = one_hot(train_Y) # TEMPORARY
 	train_accuracy = accuracy.eval(feed_dict={x: train_X, y_: train_Y})
 	train_loss = cross_entropy.eval(feed_dict={x: train_X, y_: train_Y})
 
 	if i % 10 == 0:
 		validation_X, validation_Y = validation.next(validation_size)
-		validation_Y = one_hot(validation_Y) # TEMPORARY
 		validation_accuracy = accuracy.eval(feed_dict={x: validation_X, y_: validation_Y})
 		validation_loss = cross_entropy.eval(feed_dict={x: validation_X, y_: validation_Y})
-		print("step %d, training accuracy %g, validation accuracy %g, validation loss %g"%(i, train_accuracy, validation_accuracy, validation_loss))
+		print("step %d, training accuracy %g, training loss %g, validation accuracy %g, validation loss %g"%(i, train_accuracy, train_loss, validation_accuracy, validation_loss))
 	else:
-		print("step %d, training accuracy %g"%(i, train_accuracy))
+		print("step %d, training accuracy %g, training loss %g"%(i, train_accuracy, train_loss))
 
 	train_step.run(feed_dict={x: train_X, y_: train_Y})
 

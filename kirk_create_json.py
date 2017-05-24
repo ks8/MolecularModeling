@@ -15,6 +15,6 @@ for root, subfolders, files in os.walk('data'):
 		floats = re.findall(r'\d+\.\d+', path)
 		t = float(floats[0])
 		rho = float(floats[1])
-		data.append({'path': path, 'label': {'t':t, 'rho':rho}})
+		data.append({'path': path, 'label': [t, rho]})
 
 json.dump(data, open('metadata/metadata.json', 'w'), indent=4, sort_keys=True)

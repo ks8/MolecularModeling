@@ -1,12 +1,35 @@
 from scipy.misc import imread
 import numpy as np
 
+def create_one_hot_mapping(data):
+	unique_labels = list(set([tuple(row['label']) for row in data]))
+	zeros = np.zeros(len(unique_labels))
+	one_hot_mapping = dict()
+
+	for i in range(len(unique_labels)):
+		label = unique_labels[i]
+		one_hot = np.zeros(len(unique_labels))
+		one_hot[i] = 1
+		one_hot_mapping[label] = one_hot
+
+	return one_hot_mapping
+
+def convert_to_one_hot(data):
+	one_hot_mapping = create_one_hot_mapping(data)
+	for row in data:
+		row['label'] = one_hot_mapping[tuple(row['label'])]
+	return data
+
 class Batch():
-	def __init__(self, data, im_size=250, label_size=2):
-		self.data = data
+	def __init__(self, data, one_hot=False):
+		if one_hot:
+			self.data = convert_to_one_hot(data)
+		else:
+			self.data = data
+
 		self.index = 0
-		self.im_size = im_size
-		self.label_size = label_size
+		self.im_size = len(imread(data[0]['path']).flatten())
+		self.label_size = len(data[0]['label'])
 
 	def next(self, batch_size):
 		# get the next batch_size rows from data
@@ -19,12 +42,11 @@ class Batch():
 			self.index = diff
 
 		# get the images and labels for the batch
-		images = np.zeros((batch_size, self.im_size**2))
+		images = np.zeros((batch_size, self.im_size))
 		labels = np.zeros((batch_size, self.label_size))
 		for i in range(len(batch)):
 			row = batch[i]
-			path = row['path']
-			label = row['label']
-			images[i, :] = imread(path).flatten()
-			labels[i, :] = [label['t'], label['rho']]
+			images[i, :] = imread(row['path']).flatten()
+			labels[i, :] = row['label']
+
 		return images, labels
