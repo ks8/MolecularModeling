@@ -32,28 +32,29 @@ import json
 """ Import batch class """
 from batch import Batch
 
-""" We will use the InteractiveSession class, which interleaves operations that build and run a computation graph """
-import tensorflow as tf 
-sess = tf.InteractiveSession()
+""" Import tensorflow """
+import tensorflow as tf
 
-# Load the data
+""" Load the metadata """
 data = json.load(open('metadata/metadata.json', 'r'))
 np.random.shuffle(data)
 
-# Get only specific data points for testing
-#data = list(filter(lambda x: x['label'][0] in [0.4, 0.6] and x['label'][1] == 0.7, data))
-data = list(filter(lambda x: x['label'][0] == 0.5 and x['label'][1] in [0.05, 0.75], data))
+""" Restrict data """
+data_size = 500
+temps = [0.5]
+rhos = [0.05, 0.75]
 
-# Divide data into train, validation, and test
+if temps and rhos:
+	data = list(filter(lambda x: x['label'][0] in temps and x['label'][1] in rhos, data))
+if data_size:
+	data = data[:data_size]
+
+""" Divide data into train, validation, and test """
 train_data = data[:int(0.8*len(data))]
 validation_data = data[int(0.8*len(data)):int(0.9*len(data))]
 test_data = data[int(0.9*len(data)):]
 
-print 'train', len(train_data)
-print 'validation', len(validation_data)
-print 'test', len(test_data)
-
-# Create batch generators for train, validation, and test
+""" Create batch generators for train, validation, and test """
 one_hot = True
 train = Batch(train_data, one_hot=one_hot)
 validation = Batch(validation_data, one_hot=one_hot)
@@ -61,15 +62,15 @@ test = Batch(test_data, one_hot=one_hot)
 
 n_outputs = train.label_size
 
+""" We will use the InteractiveSession class, which interleaves operations that build and run a computation graph """
+sess = tf.InteractiveSession()
+
 """ Set the learning rate """
 eta = 1e-3
 batch_size = 50
 
 """ Set the number of iterations """
-iterations = 500
-
-""" Define list to hold the cross-entropy loss """
-errors = []
+iterations = 11
 
 """ Input nodes """
 x = tf.placeholder(tf.float32, shape=[None, 62500])
@@ -93,34 +94,34 @@ def max_pool_2x2(x):
 	return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
 
 """ First convolutional layer weight and bias variables for 6 kernels """
-W_conv1 = weight_variable([5, 5, 1, 6])
+W_conv1 = weight_variable([10, 10, 1, 6])
 b_conv1 = bias_variable([6])
 
 """ Reshape the input to a 4D tensor, with second and third dimensions as image dimensions and final as color channel """
 x_image = tf.reshape(x, [-1, 250, 250, 1])
 
-""" First layer perform convolution and pooling """
+""" First layer perform convolution """
 h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)
-h_pool1 = max_pool_2x2(h_conv1)
+
+""" Second convolutional layer weight and bias variables for 16 kernels """
+W_conv2 = weight_variable([5, 5, 6, 16])
+b_conv2 = bias_variable([16])
+
+""" Second layer perform convolution """
+h_conv2 = tf.nn.relu(conv2d(h_conv1, W_conv2) + b_conv2)
 
 """ First densely connected layer with RELU activation """
-W_fc1 = weight_variable([123*123*6, 300])
-b_fc1 = bias_variable([300])
+W_fc1 = weight_variable([237*237*16, 80])
+b_fc1 = bias_variable([80])
 
-h_pool1_flat = tf.reshape(h_pool1, [-1, 123*123*6])
-h_fc1 = tf.nn.relu(tf.matmul(h_pool1_flat, W_fc1) + b_fc1)
-
-""" Second densely connected layer """
-W_fc2 = weight_variable([300, 300])
-b_fc2 = bias_variable([300])
-
-h_fc2 = tf.nn.relu(tf.matmul(h_fc1, W_fc2) + b_fc2)
+h_conv2_flat = tf.reshape(h_conv2, [-1, 237*237*16])
+h_fc1 = tf.nn.relu(tf.matmul(h_conv2_flat, W_fc1) + b_fc1)
 
 """ Output layer """
-W_fc3 = weight_variable([300, n_outputs])
-b_fc3 = bias_variable([n_outputs])
+W_fc2 = weight_variable([80, n_outputs])
+b_fc2 = bias_variable([n_outputs])
 
-y_conv = tf.matmul(h_fc2, W_fc3) + b_fc3
+y_conv = tf.matmul(h_fc1, W_fc2) + b_fc2
 
 """ Training """
 """ Define the average loss over all examples in a given batch """
@@ -138,9 +139,34 @@ if one_hot:
 	accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 sess.run(tf.global_variables_initializer())
 
+""" Define lists to hold the losses """
+train_iterations = []
+train_errors = []
+validation_iterations = []
+validation_errors = []
+
+print
+print "Starting training"
 for i in range(iterations):
 	train_X, train_Y = train.next(batch_size)
 	train_loss = loss.eval(feed_dict={x: train_X, y_: train_Y})
+	train_iterations.append(i)
+	train_errors.append(train_loss)
+
+	if i % 5 == 0:
+		validation_X, validation_Y = validation.next()
+		validation_loss = loss.eval(feed_dict={x: validation_X, y_: validation_Y})
+		validation_iterations.append(i)
+		validation_errors.append(validation_loss)
+
+		if one_hot:
+			validation_accuracy = accuracy.eval(feed_dict={x: validation_X, y_: validation_Y})
+			print("step {}, validation accuracy {:.4f}, validation loss {:.4f}".format(i, validation_accuracy, validation_loss))
+		else:
+			validation_t_loss = t_loss.eval(feed_dict={x: validation_X, y_: validation_Y})
+			validation_rho_loss = rho_loss.eval(feed_dict={x: validation_X, y_: validation_Y})
+			print("step {}, validation loss {:.4f}, validation_t_loss {:.4f}, validation_rho_loss {:.4f}".format(i, validation_loss, validation_t_loss, validation_rho_loss))
+		print
 
 	if one_hot:
 		train_accuracy = accuracy.eval(feed_dict={x: train_X, y_: train_Y})
@@ -150,35 +176,25 @@ for i in range(iterations):
 		train_rho_loss = rho_loss.eval(feed_dict={x: train_X, y_: train_Y})
 		print("step {}, training accuracy {:.4f}, training loss {:.4f}, training t_loss {:.4f}, training rho_loss {:.4f}".format(i, train_loss, train_t_loss, train_rho_loss))
 
-	if i % 10 == 0:
-		validation_X, validation_Y = validation.next(len(validation.data))
-		validation_loss = loss.eval(feed_dict={x: validation_X, y_: validation_Y})
-
-		if one_hot:
-			validation_accuracy = accuracy.eval(feed_dict={x: validation_X, y_: validation_Y})
-			print("validation accuracy {:.4f}, validation loss {:.4f}".format(validation_accuracy, validation_loss))
-		else:
-			validation_t_loss = t_loss.eval(feed_dict={x: validation_X, y_: validation_Y})
-			validation_rho_loss = rho_loss.eval(feed_dict={x: validation_X, y_: validation_Y})
-			print("validation loss {:.4f}, validation_t_loss {:.4f}, validation_rho_loss {:.4f}".format(validation_loss, validation_t_loss, validation_rho_loss))
-		print
-
 	train_step.run(feed_dict={x: train_X, y_: train_Y})
 
-text_X, text_Y = test.next(len(test.data))
+test_X, test_Y = test.next()
+if one_hot:
+	print("test accuracy {:.4f}".format(accuracy.eval(feed_dict={x: test_X, y_: test_Y})))
+print("test loss {:.4f}".format(loss.eval(feed_dict={x: test_X, y_: test_Y})))
 
-if one_hot
-	print("test accuracy %g"%accuracy.eval(feed_dict={x: test_X, y_: test_Y}))
-print("test loss %g"%loss.eval(feed_dict={x: test_X, y_: test_Y}))
+""" Plot results """
+plt.subplot(121)
+plt.plot(train_iterations, train_errors)
+plt.title("Train loss")
+plt.ylabel('Loss')
+plt.xlabel('Number of iterations')
 
+plt.subplot(122)
+plt.plot(validation_iterations, validation_errors)
+plt.title("Validation loss")
+plt.ylabel('Loss')
+plt.xlabel('Number of iterations')
 
-
-
-
-#1 change convnet to binary classification task
-#2 test convnet
-#3 rearrange data so that there are no dependent overlaps
-
-
-
-
+plt.show()
+plt.savefig('error.png')

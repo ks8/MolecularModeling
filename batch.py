@@ -31,7 +31,10 @@ class Batch():
 		self.im_size = len(imread(data[0]['path']).flatten())
 		self.label_size = len(data[0]['label'])
 
-	def next(self, batch_size):
+	def next(self, batch_size=None):
+		if batch_size is None:
+			batch_size = len(self.data)
+
 		# get the next batch_size rows from data
 		if self.index + batch_size <= len(self.data):
 			batch = self.data[self.index:self.index + batch_size]
